@@ -1,0 +1,518 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система суммаризации текстов - Master-Slave архитектура</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .loading {
+            display: none;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .progress-bar {
+            transition: width 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Заголовок -->
+        <div class="text-center mb-12 fade-in">
+            <h1 class="text-4xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-network-wired text-blue-500 mr-3"></i>
+                Система суммаризации текстов
+            </h1>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                Master-Slave архитектура с алгоритмом TextRank для автоматического сокращения текстов
+            </p>
+        </div>
+
+        <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Левая колонка - Ввод -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
+                    <form id="uploadForm" enctype="multipart/form-data" class="space-y-6">
+                        <div>
+                            <label for="fileInput" class="block text-sm font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-file-upload text-blue-500 mr-2"></i>
+                                Выберите текстовый файл для суммаризации:
+                            </label>
+                            <input type="file"
+                                   id="fileInput"
+                                   name="file"
+                                   accept=".txt,.pdf,.doc,.docx,.rtf,.odt"
+                                   class="w-full px-3 py-2 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition duration-200"
+                                   required>
+                            <p class="text-sm text-gray-500 mt-2">
+                                Поддерживаемые форматы: TXT, PDF, DOC, DOCX, RTF, ODT (макс. 10МБ)
+                            </p>
+                        </div>
+
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <label for="ratio" class="block text-sm font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-compress-alt text-green-500 mr-2"></i>
+                                Коэффициент сжатия:
+                                <span id="ratioValue" class="text-blue-600 font-bold">30%</span>
+                            </label>
+                            <input type="range"
+                                   id="ratio"
+                                   name="ratio"
+                                   min="10"
+                                   max="50"
+                                   value="30"
+                                   class="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                                   oninput="updateRatioValue(this.value)">
+                            <div class="flex justify-between text-xs text-gray-500 mt-2">
+                                <span>Коротко</span>
+                                <span>Средне</span>
+                                <span>Подробно</span>
+                            </div>
+                        </div>
+
+                        <button type="submit"
+                                id="submitBtn"
+                                class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 px-6 rounded-xl hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 font-semibold text-lg shadow-lg">
+                            <i class="fas fa-magic mr-2"></i>
+                            Суммаризировать текст
+                        </button>
+                    </form>
+
+                    <!-- Индикатор загрузки -->
+                    <div id="loading" class="loading mt-6 text-center fade-in">
+                        <div class="inline-flex items-center">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                            <span class="ml-3 text-gray-600 font-medium">Обработка текста...</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-2">Система анализирует текст и создает суммаризацию</p>
+                        <div class="mt-4 w-full bg-gray-200 rounded-full h-2">
+                            <div class="progress-bar bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full animate-pulse" style="width: 60%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Правая колонка - Статус и результаты -->
+            <div class="space-y-8">
+                <!-- Статус системы -->
+                <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                        
+                        Статус системы
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                            <div class="flex items-center">
+                                <i class="fas fa-server text-green-500 text-xl mr-3"></i>
+                                <div>
+                                    <div class="font-semibold text-green-700">Master узел</div>
+                                    <div class="text-sm text-green-600">localhost:5000</div>
+                                </div>
+                            </div>
+                            <span id="masterStatus" class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">Активен</span>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                            <div class="flex items-center">
+                                <i class="fas fa-microchip text-blue-500 text-xl mr-3"></i>
+                                <div>
+                                    <div class="font-semibold text-blue-700">Активные Slave</div>
+                                    <div class="text-sm text-blue-600">Обработчики текста</div>
+                                </div>
+                            </div>
+                            <span id="slavesCount" class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">0</span>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 bg-purple-50 rounded-lg">
+                            <div class="flex items-center">
+                                <i class="fas fa-tasks text-purple-500 text-xl mr-3"></i>
+                                <div>
+                                    <div class="font-semibold text-purple-700">Обработано задач</div>
+                                    <div class="text-sm text-purple-600">Всего обработано</div>
+                                </div>
+                            </div>
+                            <span id="tasksProcessed" class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Результаты -->
+                <div id="result" class="bg-white rounded-2xl shadow-xl p-6 hidden fade-in">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                        <i class="fas fa-chart-bar text-orange-500 mr-2"></i>
+                        Результат суммаризации
+                    </h2>
+
+                    <div class="mb-4">
+                        <div class="flex justify-between text-sm text-gray-600 mb-2">
+                            <span>Исходный текст: <strong id="originalLength" class="text-gray-800">0</strong> символов</span>
+                            <span>Суммаризированный: <strong id="summaryLength" class="text-gray-800">0</strong> символов</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div id="compressionBar" class="progress-bar bg-gradient-to-r from-green-400 to-blue-500 h-3 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                        <div class="text-right text-xs text-gray-500 mt-1">
+                            Эффективность сжатия: <span id="compressionPercent">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-4 border-2 border-gray-100 max-h-80 overflow-y-auto">
+                        <div id="summaryText" class="text-gray-700 leading-relaxed text-justify"></div>
+                    </div>
+
+                    <div class="mt-4 flex space-x-3">
+                        <button onclick="copyToClipboard()"
+                                class="flex-1 bg-green-500 text-white py-3 px-4 rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200 font-medium">
+                            <i class="fas fa-copy mr-2"></i>
+                            Копировать
+                        </button>
+                        <button onclick="downloadResult()"
+                                class="flex-1 bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 font-medium">
+                            <i class="fas fa-download mr-2"></i>
+                            Скачать
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Отображение ошибок -->
+                <div id="error" class="bg-white rounded-2xl shadow-xl p-6 hidden fade-in">
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex items-center mb-2">
+                            <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-2"></i>
+                            <h3 class="text-lg font-semibold text-red-800">Ошибка</h3>
+                        </div>
+                        <p id="errorMessage" class="text-red-700"></p>
+                    </div>
+                </div>
+
+                <!-- Инструкции -->
+                <div class="bg-white rounded-2xl shadow-xl p-6 fade-in">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                        <i class="fas fa-info-circle text-indigo-500 mr-2"></i>
+                        Как это работает?
+                    </h2>
+                    <div class="space-y-3 text-sm text-gray-600">
+                        <div class="flex items-start">
+                            <i class="fas fa-arrow-right text-green-500 mt-1 mr-2"></i>
+                            <span><strong>Master узел</strong> принимает HTTP запросы и распределяет задачи</span>
+                        </div>
+                        <div class="flex items-start">
+                            <i class="fas fa-arrow-right text-blue-500 mt-1 mr-2"></i>
+                            <span><strong>Slave узлы</strong> обрабатывают текст с помощью алгоритма TextRank</span>
+                        </div>
+                        <div class="flex items-start">
+                            <i class="fas fa-arrow-right text-purple-500 mt-1 mr-2"></i>
+                            <span><strong>Протокол UDP</strong> обеспечивает быструю связь между узлами</span>
+                        </div>
+                        <div class="flex items-start">
+                            <i class="fas fa-arrow-right text-orange-500 mt-1 mr-2"></i>
+                            <span><strong>TextRank</strong> извлекает важные предложения с помощью графового анализа</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tasksProcessed = 0;
+        let currentResult = null;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            updateSystemStatus();
+            checkMasterStatus();
+            setInterval(checkMasterStatus, 10000);
+        });
+
+        function updateRatioValue(value) {
+            document.getElementById('ratioValue').textContent = value + '%';
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+
+            showLoading();
+            hideResult();
+            hideError();
+
+            try {
+                const response = await fetch('/summarize', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('Статус ответа:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Ошибка сервера:', errorText);
+                    throw new Error(`Ошибка сервера: ${response.status}. ${errorText}`);
+                }
+
+                const responseText = await response.text();
+                console.log('Сырой ответ:', responseText);
+
+                // Парсим JSON
+                const data = JSON.parse(responseText);
+                console.log('Распарсенные данные:', data);
+
+                // Проверяем структуру
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Неверный формат ответа от сервера');
+                }
+
+                // Проверяем статус
+                if (data.status && data.status !== 'success') {
+                    throw new Error(data.error || 'Сервер вернул статус ошибки');
+                }
+
+                currentResult = data;
+                showResult(data);
+                tasksProcessed++;
+                updateSystemStatus();
+
+            } catch (error) {
+                console.error('Ошибка запроса:', error);
+                showError(error.message);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Обработка...';
+
+            // Индикатор прогресса для больших файлов
+            const fileInput = document.getElementById('fileInput');
+            if (fileInput.files[0] && fileInput.files[0].size > 100000) {
+                document.getElementById('loading').innerHTML += `
+                    <div class="mt-4">
+                        <p class="text-sm text-gray-600">Обработка большого файла, это может занять некоторое время...</p>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div id="chunkProgress" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerHTML = '<i class="fas fa-magic mr-2"></i>Суммаризировать текст';
+        }
+
+        function showResult(data) {
+            try {
+                console.log('Полученные данные:', data);
+
+                // Проверяем наличие данных и обязательных полей
+                if (!data) {
+                    throw new Error('Нет данных от сервера');
+                }
+
+                // Безопасное извлечение данных
+                const originalLength = data.originalLength || data.OriginalLength || 0;
+                const summaryLength = data.summaryLength || data.SummaryLength || 0;
+                const summary = data.summary || data.Summary || 'Суммаризация недоступна';
+                const fileName = data.fileName || data.FileName || 'неизвестный_файл.txt';
+                const compressionRatio = data.compressionRatio || 0;
+
+                console.log('Обработанные данные:', {
+                    originalLength,
+                    summaryLength,
+                    fileName,
+                    compressionRatio
+                });
+
+                // Обновляем интерфейс
+                document.getElementById('originalLength').textContent = originalLength.toLocaleString();
+                document.getElementById('summaryLength').textContent = summaryLength.toLocaleString();
+                document.getElementById('summaryText').textContent = summary;
+
+                // Расчет коэффициента сжатия
+                let compressionPercent = 0;
+
+                if (compressionRatio > 0 && compressionRatio <= 1) {
+                    compressionPercent = compressionRatio * 100;
+                } else if (originalLength > 0) {
+                    compressionPercent = (1 - summaryLength / originalLength) * 100;
+                }
+
+                const compressionBar = document.getElementById('compressionBar');
+                const compressionPercentElement = document.getElementById('compressionPercent');
+
+                if (compressionBar) {
+                    compressionBar.style.width = Math.min(100, Math.max(1, compressionPercent)) + '%';
+                }
+
+                if (compressionPercentElement) {
+                    compressionPercentElement.textContent = Math.round(compressionPercent) + '%';
+                }
+
+                // Показываем результат
+                const resultElement = document.getElementById('result');
+                if (resultElement) {
+                    resultElement.classList.remove('hidden');
+                    resultElement.classList.add('fade-in');
+                }
+
+            } catch (error) {
+                console.error('Ошибка отображения результата:', error);
+                showError('Ошибка отображения результата: ' + error.message);
+            }
+        }
+
+        function hideResult() {
+            document.getElementById('result').classList.add('hidden');
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('error').classList.remove('hidden');
+            document.getElementById('error').classList.add('fade-in');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.add('hidden');
+        }
+
+        function copyToClipboard() {
+            const summaryText = document.getElementById('summaryText').textContent;
+            navigator.clipboard.writeText(summaryText).then(() => {
+                showNotification('Текст скопирован в буфер обмена!', 'success');
+            }).catch(() => {
+                showNotification('Не удалось скопировать текст', 'error');
+            });
+        }
+
+        function downloadResult() {
+            if (!currentResult) return;
+
+            const blob = new Blob([currentResult.summary], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const fileName = currentResult.fileName ? `суммаризация_${currentResult.fileName}` : 'суммаризация.txt';
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showNotification('Результат сохранен в файл!', 'success');
+        }
+
+        // Информация о выбранном файле
+        const fileInput = document.getElementById('fileInput');
+        fileInput.addEventListener('change', function (e) {
+            const file = this.files[0];
+            if (file) {
+                const fileInfo = document.createElement('div');
+                fileInfo.className = 'mt-2 p-2 bg-blue-50 rounded-lg';
+                fileInfo.innerHTML = `
+                    <div class="text-sm text-blue-700">
+                        <strong>Выбранный файл:</strong> ${file.name}<br>
+                        <strong>Размер:</strong> ${(file.size / 1024).toFixed(2)} КБ<br>
+                        <strong>Тип:</strong> ${file.type || 'Неизвестно'}
+                    </div>
+                `;
+                this.parentNode.appendChild(fileInfo);
+            }
+        });
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white font-medium z-50 fade-in ${type === 'success' ? 'bg-green-500' : 'bg-red-500'
+                }`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        async function checkMasterStatus() {
+            try {
+                const response = await fetch('/status');
+                if (response.ok) {
+                    const status = await response.json();
+                    console.log('Статус системы:', status);
+
+                    // Проверяем структуру ответа
+                    if (status && status.master) {
+                        document.getElementById('masterStatus').textContent = status.master.status === 'running' ? 'Активен' : 'Неактивен';
+                    }
+
+                    if (status && status.slaves) {
+                        // Если slaves - массив
+                        if (Array.isArray(status.slaves)) {
+                            const activeSlaves = status.slaves.filter(s => s.isActive).length;
+                            document.getElementById('slavesCount').textContent = activeSlaves;
+                        }
+                        // Если slaves - объект с информацией
+                        else if (status.slaves.activeSlaves !== undefined) {
+                            document.getElementById('slavesCount').textContent = status.slaves.activeSlaves;
+                        }
+
+                        // Обновляем счетчик задач
+                        if (status.master && status.master.totalTasksProcessed !== undefined) {
+                            document.getElementById('tasksProcessed').textContent = status.master.totalTasksProcessed;
+                        }
+                    }
+                } else {
+                    console.error('Ошибка получения статуса:', response.status);
+                    setStatusError();
+                }
+            } catch (error) {
+                console.error('Ошибка подключения к Master:', error);
+                setStatusError();
+            }
+        }
+
+        function setStatusError() {
+            document.getElementById('masterStatus').textContent = 'Недоступен';
+            document.getElementById('masterStatus').className = 'px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium';
+            document.getElementById('slavesCount').textContent = '0';
+        }
+
+        function updateSystemStatus(status = null) {
+            if (status) {
+                const activeSlaves = status.slaves ? status.slaves.filter(s => s.isActive).length : 0;
+                document.getElementById('slavesCount').textContent = activeSlaves;
+                document.getElementById('tasksProcessed').textContent = tasksProcessed;
+
+                if (activeSlaves > 0) {
+                    document.getElementById('masterStatus').textContent = 'Активен';
+                } else {
+                    document.getElementById('masterStatus').textContent = 'Нет slave';
+                }
+            } else {
+                document.getElementById('tasksProcessed').textContent = tasksProcessed;
+            }
+        }
+    </script>
+</body>
+</html>
